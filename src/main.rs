@@ -1,6 +1,5 @@
-use core::f32;
 use device_query::{DeviceQuery, DeviceState, Keycode};
-use noise_maker::{NoiseMaker, NoiseMakerData};
+use noise_maker::{Freq, NoiseMaker, NoiseMakerData};
 use rodio::{source::Source, OutputStream, Sink};
 use std::io::Write;
 use std::{
@@ -35,8 +34,8 @@ fn main() {
         "#
     );
 
-    let octave_base_freq = 110.0; // A2		        // frequency of octave represented by keyboard
-    let _12th_root_of_2 = 2.0_f32.powf(1.0 / 12.0); // assuming western 12 notes per ocatve
+    let octave_base_freq: Freq = 110.0; // A2		        // frequency of octave represented by keyboard
+    let _12th_root_of_2: Freq = 2.0_f64.powf(1.0 / 12.0); // assuming western 12 notes per ocatve
 
     let mut curr_key = -1;
 
@@ -68,10 +67,10 @@ fn main() {
             if is_pressed {
                 if curr_key != k {
                     if let Ok(mut data) = data.lock() {
-                        data.freq = octave_base_freq * _12th_root_of_2.powf(k as f32);
+                        data.freq = octave_base_freq * _12th_root_of_2.powf(k as Freq);
                         let dt = data.dt;
                         data.envelope.note_on(dt);
-                        print!("\rNote On: {}s {}Hz        ", dt, data.freq);
+                        print!("\rNote On: {}s {}Hz            ", dt, data.freq);
                         std::io::stdout().flush().unwrap();
                         curr_key = k;
                     }
@@ -85,7 +84,7 @@ fn main() {
                 if curr_key != -1 {
                     let dt = data.dt;
                     data.envelope.note_off(dt);
-                    print!("\rNote Off: {}s             ", dt);
+                    print!("\rNote Off: {}s                 ", dt);
                     std::io::stdout().flush().unwrap();
                     curr_key = -1;
                 }
