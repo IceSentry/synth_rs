@@ -12,38 +12,35 @@ fn w(hertz: f32) -> f32 {
 }
 
 #[allow(dead_code)]
-enum WaveType {
+pub enum WaveType {
     Sine,
     Square,
     Triangle,
     SawSlow,
     SawFast,
-    Random,
+    Noise,
 }
 
-fn sine_wave(freq: f32, dt: f32) -> f32 {
-    (w(freq) * dt).sin()
-}
-
-fn osc(freq: f32, dt: f32, wave: WaveType) -> f32 {
+pub fn osc(dt: f32, freq: f32, wave: WaveType, lfo_hertz: f32, lfo_amplitude: f32) -> f32 {
+    let base_freq = w(freq) * dt + lfo_amplitude * freq * (w(lfo_hertz) * dt).sin();
     match wave {
-        WaveType::Sine => sine_wave(freq, dt),
+        WaveType::Sine => base_freq.sin(),
         WaveType::Square => {
-            if sine_wave(freq, dt) > 0.0 {
-                0.2
+            if base_freq.sin() > 0.0 {
+                1.0
             } else {
-                -0.2
+                -1.0
             }
         }
-        WaveType::Triangle => sine_wave(freq, dt).asin() * FRAC_2_PI,
+        WaveType::Triangle => base_freq.sin().asin() * FRAC_2_PI,
         WaveType::SawSlow => {
             let out = (1..50)
                 .map(|x| x as f32)
-                .fold(0.0, |acc, curr| acc + ((curr * w(freq) * dt).sin() / curr));
+                .fold(0.0, |acc, curr| acc + ((curr * base_freq).sin() / curr));
             out * FRAC_2_PI
         }
         WaveType::SawFast => FRAC_2_PI * (freq * PI * (dt % (1.0 / freq)) - FRAC_PI_2),
-        WaveType::Random => fastrand::i32(-1..1) as f32,
+        WaveType::Noise => fastrand::i32(-1..1) as f32,
     }
 }
 
@@ -155,9 +152,7 @@ impl NoiseMaker {
 
     fn make_noise(&self) -> f32 {
         if let Ok(data) = self.data.lock() {
-            data.envelope.amplitude(data.dt)
-                * (osc(data.freq, data.dt, WaveType::Sine)
-                    + osc(data.freq, data.dt, WaveType::SawFast))
+            data.envelope.amplitude(data.dt) * (osc(data.freq, data.dt, WaveType::Sine, 0.0, 0.0))
         } else {
             0.0
         }
