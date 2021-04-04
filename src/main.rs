@@ -1,4 +1,5 @@
 use device_query::{DeviceQuery, DeviceState, Keycode};
+use instruments::{Harmonica, Instrument, InstrumentType, Test};
 use noise_maker::{NoiseMaker, NoiseMakerData, Note};
 use rodio::{source::Source, OutputStream, Sink};
 use std::io::Write;
@@ -7,6 +8,7 @@ use std::{
     thread,
 };
 
+mod instruments;
 mod noise_maker;
 
 fn main() {
@@ -15,9 +17,10 @@ fn main() {
     {
         let data = data.clone();
         thread::spawn(move || {
+            let instruments = vec![InstrumentType::from(Test::new())];
             let (_stream, stream_handle) = OutputStream::try_default().unwrap();
             let sink = Sink::try_new(&stream_handle).unwrap();
-            let source = NoiseMaker::new(data).amplify(0.20);
+            let source = NoiseMaker::new(data, instruments).amplify(0.20);
             sink.append(source);
             sink.sleep_until_end();
         });

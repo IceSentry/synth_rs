@@ -6,18 +6,20 @@ use std::{
     time::Duration,
 };
 
-pub type Freq = f64;
+use crate::instruments::{Instrument, InstrumentType};
+
+pub type FreqType = f64;
 
 /// Converts frequency (Hz) to angular velocity
-fn w(hertz: Freq) -> Freq {
+fn w(hertz: FreqType) -> FreqType {
     hertz * 2.0 * PI
 }
 
 #[derive(Debug)]
 pub struct Note {
     pub id: i32,
-    pub on: Freq,
-    pub off: Freq,
+    pub on: FreqType,
+    pub off: FreqType,
     pub active: bool,
     pub channel: usize,
 }
@@ -50,7 +52,13 @@ pub enum WaveType {
     Noise,
 }
 
-pub fn osc(dt: Freq, freq: Freq, wave: WaveType, lfo_hertz: Freq, lfo_amplitude: Freq) -> Freq {
+pub fn osc(
+    dt: FreqType,
+    freq: FreqType,
+    wave: WaveType,
+    lfo_hertz: FreqType,
+    lfo_amplitude: FreqType,
+) -> FreqType {
     let base_freq = w(freq) * dt + lfo_amplitude * freq * (w(lfo_hertz) * dt).sin();
     match wave {
         WaveType::Sine => base_freq.sin(),
@@ -64,30 +72,30 @@ pub fn osc(dt: Freq, freq: Freq, wave: WaveType, lfo_hertz: Freq, lfo_amplitude:
         WaveType::Triangle => base_freq.sin().asin() * FRAC_2_PI,
         WaveType::SawSlow => {
             let out = (1..50)
-                .map(|x| x as Freq)
+                .map(|x| x as FreqType)
                 .fold(0.0, |acc, curr| acc + ((curr * base_freq).sin() / curr));
             out * FRAC_2_PI
         }
         WaveType::SawFast => FRAC_2_PI * (freq * PI * (dt % (1.0 / freq)) - FRAC_PI_2),
-        WaveType::Noise => fastrand::i32(-1..1) as Freq,
+        WaveType::Noise => fastrand::i32(-1..1) as FreqType,
     }
 }
 
-pub fn scale(note_id: i32, scale_id: i32) -> Freq {
+pub fn scale(note_id: i32, _scale_id: i32) -> FreqType {
     256.0 * 1.059_463_094_359_295_3_f64.powi(note_id)
 }
 
 #[derive(Clone, Copy)]
 pub struct EnvelopeADSR {
-    attack_time: Freq,
-    decay_time: Freq,
-    sustain_amplitude: Freq,
-    release_time: Freq,
-    start_amplitude: Freq,
+    pub attack_time: FreqType,
+    pub decay_time: FreqType,
+    pub sustain_amplitude: FreqType,
+    pub release_time: FreqType,
+    pub start_amplitude: FreqType,
 }
 
 impl EnvelopeADSR {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             attack_time: 0.1,
             decay_time: 0.1,
@@ -97,7 +105,7 @@ impl EnvelopeADSR {
         }
     }
 
-    fn amplitude(&self, dt: Freq, dt_on: Freq, dt_off: Freq) -> Freq {
+    pub fn amplitude(&self, dt: FreqType, dt_on: FreqType, dt_off: FreqType) -> FreqType {
         let mut amplitude = 0.0;
         let mut release_amplitude = 0.0;
 
@@ -148,11 +156,12 @@ impl EnvelopeADSR {
 
 pub struct NoiseMaker {
     data: Arc<Mutex<NoiseMakerData>>,
+    instruments: Vec<InstrumentType>,
 }
 
 pub struct NoiseMakerData {
     num_sample: usize,
-    pub dt: Freq,
+    pub dt: FreqType,
     pub envelope: EnvelopeADSR,
     pub notes: Vec<Note>,
 }
@@ -175,30 +184,25 @@ impl Default for NoiseMakerData {
 }
 
 impl NoiseMaker {
-    pub fn new(data: Arc<Mutex<NoiseMakerData>>) -> Self {
-        Self { data }
+    pub fn new(data: Arc<Mutex<NoiseMakerData>>, instruments: Vec<InstrumentType>) -> Self {
+        Self { data, instruments }
     }
 
-    fn make_noise(&self) -> Freq {
+    fn make_noise(&self) -> FreqType {
         match self.data.lock() {
             Ok(mut data) => {
                 let dt = data.dt;
-                let env = data.envelope;
-
-                let mut mixed_output = 0.0;
-                for note in data.notes.iter_mut() {
-                    let (sound, finished) = {
-                        // instruments.sound()
-                        let amplitude = env.amplitude(dt, note.on, note.off);
-                        let finished = amplitude <= 0.0;
-                        let osc = osc(note.on - dt, scale(note.id, 0), WaveType::Sine, 0.0, 0.0);
-                        (amplitude * osc, finished)
-                    };
-                    if finished && note.off > note.on {
-                        note.active = false;
-                    }
-                    mixed_output += sound
-                }
+                let mixed_output: FreqType = data
+                    .notes
+                    .iter_mut()
+                    .map(|note| {
+                        let (sound, finished) = self.instruments[note.channel].sound(dt, note);
+                        if finished && note.off > note.on {
+                            note.active = false;
+                        }
+                        sound
+                    })
+                    .sum();
 
                 while let Some(index) = data.notes.iter().position(|x| !x.active) {
                     data.notes.remove(index);
@@ -237,7 +241,7 @@ impl Iterator for NoiseMaker {
     fn next(&mut self) -> Option<f32> {
         if let Ok(mut data) = self.data.lock() {
             data.num_sample = data.num_sample.wrapping_add(1);
-            data.dt = data.num_sample as Freq / self.sample_rate() as Freq;
+            data.dt = data.num_sample as FreqType / self.sample_rate() as FreqType;
         }
         let noise = self.make_noise();
         // dbg!(noise);
