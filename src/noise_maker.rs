@@ -13,6 +13,33 @@ fn w(hertz: Freq) -> Freq {
     hertz * 2.0 * PI
 }
 
+#[derive(Debug)]
+pub struct Note {
+    pub id: i32,
+    pub on: Freq,
+    pub off: Freq,
+    pub active: bool,
+    pub channel: usize,
+}
+
+impl Note {
+    pub fn new() -> Self {
+        Self {
+            id: 0,
+            on: 0.0,
+            off: 0.0,
+            active: false,
+            channel: 0,
+        }
+    }
+}
+
+impl Default for Note {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[allow(dead_code)]
 pub enum WaveType {
     Sine,
@@ -46,16 +73,17 @@ pub fn osc(dt: Freq, freq: Freq, wave: WaveType, lfo_hertz: Freq, lfo_amplitude:
     }
 }
 
+pub fn scale(note_id: i32, scale_id: i32) -> Freq {
+    256.0 * 1.059_463_094_359_295_3_f64.powi(note_id)
+}
+
+#[derive(Clone, Copy)]
 pub struct EnvelopeADSR {
     attack_time: Freq,
     decay_time: Freq,
     sustain_amplitude: Freq,
     release_time: Freq,
     start_amplitude: Freq,
-
-    trigger_on_time: Freq,
-    trigger_off_time: Freq,
-    note_on: bool,
 }
 
 impl EnvelopeADSR {
@@ -66,18 +94,16 @@ impl EnvelopeADSR {
             sustain_amplitude: 1.0,
             release_time: 0.2,
             start_amplitude: 1.0,
-            trigger_on_time: 0.0,
-            trigger_off_time: 0.0,
-            note_on: false,
         }
     }
 
-    fn amplitude(&self, dt: Freq) -> Freq {
+    fn amplitude(&self, dt: Freq, dt_on: Freq, dt_off: Freq) -> Freq {
         let mut amplitude = 0.0;
         let mut release_amplitude = 0.0;
-        let lifetime = dt - self.trigger_on_time;
 
-        if self.note_on {
+        if dt_on > dt_off {
+            let lifetime = dt - dt_on;
+
             if lifetime <= self.attack_time {
                 amplitude = (lifetime / self.attack_time) * self.start_amplitude;
             }
@@ -92,6 +118,8 @@ impl EnvelopeADSR {
                 amplitude = self.sustain_amplitude;
             }
         } else {
+            let lifetime = dt_off - dt_on;
+
             if lifetime <= self.attack_time {
                 release_amplitude = (lifetime / self.attack_time) * self.start_amplitude;
             }
@@ -106,8 +134,8 @@ impl EnvelopeADSR {
                 release_amplitude = self.sustain_amplitude;
             }
 
-            amplitude = ((dt - self.trigger_off_time) / self.release_time) * -release_amplitude
-                + release_amplitude;
+            amplitude =
+                ((dt - dt_off) / self.release_time) * -release_amplitude + release_amplitude;
         }
 
         if amplitude <= 0.0001 {
@@ -115,16 +143,6 @@ impl EnvelopeADSR {
         }
 
         amplitude
-    }
-
-    pub fn note_on(&mut self, dt_on: Freq) {
-        self.trigger_on_time = dt_on;
-        self.note_on = true;
-    }
-
-    pub fn note_off(&mut self, dt_off: Freq) {
-        self.trigger_off_time = dt_off;
-        self.note_on = false;
     }
 }
 
@@ -135,17 +153,17 @@ pub struct NoiseMaker {
 pub struct NoiseMakerData {
     num_sample: usize,
     pub dt: Freq,
-    pub freq: Freq,
     pub envelope: EnvelopeADSR,
+    pub notes: Vec<Note>,
 }
 
 impl NoiseMakerData {
     pub fn new() -> Self {
         Self {
             envelope: EnvelopeADSR::new(),
-            freq: 0.0,
             dt: 0.0,
             num_sample: 0,
+            notes: Vec::new(),
         }
     }
 }
@@ -162,10 +180,33 @@ impl NoiseMaker {
     }
 
     fn make_noise(&self) -> Freq {
-        if let Ok(data) = self.data.lock() {
-            data.envelope.amplitude(data.dt) * (osc(data.freq, data.dt, WaveType::Sine, 0.0, 0.0))
-        } else {
-            0.0
+        match self.data.lock() {
+            Ok(mut data) => {
+                let dt = data.dt;
+                let env = data.envelope;
+
+                let mut mixed_output = 0.0;
+                for note in data.notes.iter_mut() {
+                    let (sound, finished) = {
+                        // instruments.sound()
+                        let amplitude = env.amplitude(dt, note.on, note.off);
+                        let finished = amplitude <= 0.0;
+                        let osc = osc(note.on - dt, scale(note.id, 0), WaveType::Sine, 0.0, 0.0);
+                        (amplitude * osc, finished)
+                    };
+                    if finished && note.off > note.on {
+                        note.active = false;
+                    }
+                    mixed_output += sound
+                }
+
+                while let Some(index) = data.notes.iter().position(|x| !x.active) {
+                    data.notes.remove(index);
+                }
+
+                mixed_output * 0.2
+            }
+            Err(_) => 0.0,
         }
     }
 }
@@ -181,6 +222,7 @@ impl Source for NoiseMaker {
 
     fn sample_rate(&self) -> u32 {
         48000
+        // 20
     }
 
     fn total_duration(&self) -> Option<Duration> {
@@ -197,6 +239,8 @@ impl Iterator for NoiseMaker {
             data.num_sample = data.num_sample.wrapping_add(1);
             data.dt = data.num_sample as Freq / self.sample_rate() as Freq;
         }
-        Some(self.make_noise() as f32)
+        let noise = self.make_noise();
+        // dbg!(noise);
+        Some(noise as f32)
     }
 }

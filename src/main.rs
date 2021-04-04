@@ -1,5 +1,5 @@
 use device_query::{DeviceQuery, DeviceState, Keycode};
-use noise_maker::{Freq, NoiseMaker, NoiseMakerData};
+use noise_maker::{NoiseMaker, NoiseMakerData, Note};
 use rodio::{source::Source, OutputStream, Sink};
 use std::io::Write;
 use std::{
@@ -17,7 +17,7 @@ fn main() {
         thread::spawn(move || {
             let (_stream, stream_handle) = OutputStream::try_default().unwrap();
             let sink = Sink::try_new(&stream_handle).unwrap();
-            let source = NoiseMaker::new(data).amplify(0.10);
+            let source = NoiseMaker::new(data).amplify(0.20);
             sink.append(source);
             sink.sleep_until_end();
         });
@@ -34,16 +34,10 @@ fn main() {
         "#
     );
 
-    let octave_base_freq: Freq = 110.0; // A2		        // frequency of octave represented by keyboard
-    let _12th_root_of_2: Freq = 2.0_f64.powf(1.0 / 12.0); // assuming western 12 notes per ocatve
-
-    let mut curr_key = -1;
-
     loop {
         let device_state = DeviceState::new();
         let keys = device_state.get_keys();
 
-        let mut key_pressed = false;
         for k in 0..16 {
             let is_pressed = match k {
                 0 if keys.contains(&Keycode::Z) => true,
@@ -64,31 +58,36 @@ fn main() {
                 15 if keys.contains(&Keycode::Slash) => true,
                 _ => false,
             };
-            if is_pressed {
-                if curr_key != k {
-                    if let Ok(mut data) = data.lock() {
-                        data.freq = octave_base_freq * _12th_root_of_2.powf(k as Freq);
-                        let dt = data.dt;
-                        data.envelope.note_on(dt);
-                        print!("\rNote On: {}s {}Hz            ", dt, data.freq);
-                        std::io::stdout().flush().unwrap();
-                        curr_key = k;
+
+            if let Ok(mut data) = data.lock() {
+                let dt = data.dt;
+                match data.notes.iter_mut().find(|n| n.id == k) {
+                    Some(note) => {
+                        if is_pressed {
+                            if note.off > note.on {
+                                note.on = dt;
+                                note.active = true;
+                            }
+                        } else if note.off < note.on {
+                            note.off = dt;
+                        }
+                    }
+                    None => {
+                        if is_pressed {
+                            let note = Note {
+                                id: k,
+                                on: dt,
+                                off: 0.0,
+                                channel: 0,
+                                active: true,
+                            };
+                            data.notes.push(note);
+                        }
                     }
                 }
-                key_pressed = true;
-            }
-        }
 
-        if !key_pressed {
-            if let Ok(mut data) = data.lock() {
-                if curr_key != -1 {
-                    let dt = data.dt;
-                    data.envelope.note_off(dt);
-                    print!("\rNote Off: {}s                 ", dt);
-                    std::io::stdout().flush().unwrap();
-                    curr_key = -1;
-                }
-                // data.freq = 0.0;
+                print!("\rNotes: {}  ", data.notes.len());
+                std::io::stdout().flush().unwrap();
             }
         }
 
