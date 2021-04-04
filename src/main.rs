@@ -1,5 +1,5 @@
 use device_query::{DeviceQuery, DeviceState, Keycode};
-use instruments::{Harmonica, Instrument, InstrumentType, Test};
+use instruments::{InstrumentType, Test};
 use noise_maker::{NoiseMaker, NoiseMakerData, Note};
 use rodio::{source::Source, OutputStream, Sink};
 use std::io::Write;

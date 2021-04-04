@@ -5,7 +5,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 use std::{
-    f64::consts::{FRAC_2_PI, FRAC_PI_2, PI},
+    f64::consts::{FRAC_2_PI, PI},
     time::Duration,
 };
 
@@ -63,7 +63,8 @@ pub fn osc(
     lfo_amplitude: FreqType,
 ) -> FreqType {
     let phase = w(freq) * dt;
-    let base_freq = phase + lfo_amplitude * freq * phase.sin();
+    let lfo_phase = w(lfo_hertz) * dt;
+    let base_freq = phase + lfo_amplitude * freq * lfo_phase.sin();
     match wave {
         WaveType::Sine => base_freq.sin(),
         WaveType::Square => {
