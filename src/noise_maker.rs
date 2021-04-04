@@ -47,25 +47,23 @@ pub fn osc(dt: f32, freq: f32, wave: WaveType, lfo_hertz: f32, lfo_amplitude: f3
 pub struct EnvelopeADSR {
     attack_time: f32,
     decay_time: f32,
-    release_time: f32,
-
     sustain_amplitude: f32,
+    release_time: f32,
     start_amplitude: f32,
 
     trigger_on_time: f32,
     trigger_off_time: f32,
-
     note_on: bool,
 }
 
 impl EnvelopeADSR {
     fn new() -> Self {
         Self {
-            attack_time: 0.10,
-            decay_time: 0.01,
+            attack_time: 0.1,
+            decay_time: 0.1,
+            sustain_amplitude: 1.0,
+            release_time: 0.2,
             start_amplitude: 1.0,
-            sustain_amplitude: 0.8,
-            release_time: 0.20,
             trigger_on_time: 0.0,
             trigger_off_time: 0.0,
             note_on: false,
@@ -74,29 +72,40 @@ impl EnvelopeADSR {
 
     fn amplitude(&self, dt: f32) -> f32 {
         let mut amplitude = 0.0;
+        let mut release_amplitude = 0.0;
         let lifetime = dt - self.trigger_on_time;
+
         if self.note_on {
-            // Attack
             if lifetime <= self.attack_time {
                 amplitude = (lifetime / self.attack_time) * self.start_amplitude;
             }
 
-            // Decay
             if lifetime > self.attack_time && lifetime <= (self.attack_time + self.decay_time) {
                 amplitude = ((lifetime - self.attack_time) / self.decay_time)
                     * (self.sustain_amplitude - self.start_amplitude)
                     + self.start_amplitude;
             }
 
-            // Sustain
             if lifetime > (self.attack_time + self.decay_time) {
                 amplitude = self.sustain_amplitude;
             }
         } else {
-            // Release
-            amplitude = ((dt - self.trigger_off_time) / self.release_time)
-                * (-self.sustain_amplitude)
-                + self.sustain_amplitude;
+            if lifetime <= self.attack_time {
+                release_amplitude = (lifetime / self.attack_time) * self.start_amplitude;
+            }
+
+            if lifetime > self.attack_time && lifetime <= (self.attack_time + self.decay_time) {
+                release_amplitude = ((lifetime - self.attack_time) / self.decay_time)
+                    * (self.sustain_amplitude - self.start_amplitude)
+                    + self.start_amplitude;
+            }
+
+            if lifetime > (self.attack_time + self.decay_time) {
+                release_amplitude = self.sustain_amplitude;
+            }
+
+            amplitude = ((dt - self.trigger_off_time) / self.release_time) * -release_amplitude
+                + release_amplitude;
         }
 
         if amplitude <= 0.0001 {
