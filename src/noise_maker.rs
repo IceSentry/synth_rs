@@ -1,6 +1,9 @@
 use core::f32;
 use rodio::source::Source;
-use std::sync::{Arc, Mutex};
+use std::{
+    f64::consts::TAU,
+    sync::{Arc, Mutex},
+};
 use std::{
     f64::consts::{FRAC_2_PI, FRAC_PI_2, PI},
     time::Duration,
@@ -59,7 +62,8 @@ pub fn osc(
     lfo_hertz: FreqType,
     lfo_amplitude: FreqType,
 ) -> FreqType {
-    let base_freq = w(freq) * dt + lfo_amplitude * freq * (w(lfo_hertz) * dt).sin();
+    let phase = w(freq) * dt;
+    let base_freq = phase + lfo_amplitude * freq * phase.sin();
     match wave {
         WaveType::Sine => base_freq.sin(),
         WaveType::Square => {
@@ -76,7 +80,7 @@ pub fn osc(
                 .fold(0.0, |acc, curr| acc + ((curr * base_freq).sin() / curr));
             out * FRAC_2_PI
         }
-        WaveType::SawFast => FRAC_2_PI * (freq * PI * (dt % (1.0 / freq)) - FRAC_PI_2),
+        WaveType::SawFast => (phase % TAU) / PI - 1.0,
         WaveType::Noise => fastrand::i32(-1..1) as FreqType,
     }
 }
@@ -106,45 +110,31 @@ impl EnvelopeADSR {
     }
 
     pub fn amplitude(&self, dt: FreqType, dt_on: FreqType, dt_off: FreqType) -> FreqType {
-        let mut amplitude = 0.0;
-        let mut release_amplitude = 0.0;
-
-        if dt_on > dt_off {
+        let mut amplitude = if dt_on > dt_off {
             let lifetime = dt - dt_on;
-
             if lifetime <= self.attack_time {
-                amplitude = (lifetime / self.attack_time) * self.start_amplitude;
-            }
-
-            if lifetime > self.attack_time && lifetime <= (self.attack_time + self.decay_time) {
-                amplitude = ((lifetime - self.attack_time) / self.decay_time)
+                (lifetime / self.attack_time) * self.start_amplitude
+            } else if lifetime <= (self.attack_time + self.decay_time) {
+                ((lifetime - self.attack_time) / self.decay_time)
                     * (self.sustain_amplitude - self.start_amplitude)
-                    + self.start_amplitude;
-            }
-
-            if lifetime > (self.attack_time + self.decay_time) {
-                amplitude = self.sustain_amplitude;
+                    + self.start_amplitude
+            } else {
+                self.sustain_amplitude
             }
         } else {
             let lifetime = dt_off - dt_on;
-
-            if lifetime <= self.attack_time {
-                release_amplitude = (lifetime / self.attack_time) * self.start_amplitude;
-            }
-
-            if lifetime > self.attack_time && lifetime <= (self.attack_time + self.decay_time) {
-                release_amplitude = ((lifetime - self.attack_time) / self.decay_time)
+            let release_amplitude = if lifetime <= self.attack_time {
+                (lifetime / self.attack_time) * self.start_amplitude
+            } else if lifetime <= (self.attack_time + self.decay_time) {
+                ((lifetime - self.attack_time) / self.decay_time)
                     * (self.sustain_amplitude - self.start_amplitude)
-                    + self.start_amplitude;
-            }
+                    + self.start_amplitude
+            } else {
+                self.sustain_amplitude
+            };
 
-            if lifetime > (self.attack_time + self.decay_time) {
-                release_amplitude = self.sustain_amplitude;
-            }
-
-            amplitude =
-                ((dt - dt_off) / self.release_time) * -release_amplitude + release_amplitude;
-        }
+            ((dt - dt_off) / self.release_time) * -release_amplitude + release_amplitude
+        };
 
         if amplitude <= 0.0001 {
             amplitude = 0.0;
