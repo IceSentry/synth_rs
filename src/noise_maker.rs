@@ -45,6 +45,7 @@ impl Default for Note {
     }
 }
 
+#[derive(Clone, Copy)]
 #[allow(dead_code)]
 pub enum WaveType {
     Sine,
@@ -99,8 +100,8 @@ pub struct EnvelopeADSR {
     pub start_amplitude: FreqType,
 }
 
-impl EnvelopeADSR {
-    pub fn new() -> Self {
+impl Default for EnvelopeADSR {
+    fn default() -> Self {
         Self {
             attack_time: 0.1,
             decay_time: 0.1,
@@ -109,7 +110,9 @@ impl EnvelopeADSR {
             start_amplitude: 1.0,
         }
     }
+}
 
+impl EnvelopeADSR {
     pub fn amplitude(&self, dt: FreqType, dt_on: FreqType, dt_off: FreqType) -> FreqType {
         let mut amplitude = if dt_on > dt_off {
             let lifetime = dt - dt_on;
@@ -157,20 +160,14 @@ pub struct NoiseMakerData {
     pub notes: Vec<Note>,
 }
 
-impl NoiseMakerData {
-    pub fn new() -> Self {
+impl Default for NoiseMakerData {
+    fn default() -> Self {
         Self {
-            envelope: EnvelopeADSR::new(),
+            envelope: EnvelopeADSR::default(),
             dt: 0.0,
             num_sample: 0,
             notes: Vec::new(),
         }
-    }
-}
-
-impl Default for NoiseMakerData {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -187,7 +184,7 @@ impl NoiseMaker {
                     .notes
                     .iter_mut()
                     .map(|note| {
-                        let (sound, finished) = self.instruments[note.channel].sound(dt, note);
+                        let (sound, finished) = self.instruments[note.channel].play_note(dt, note);
                         if finished && note.off > note.on {
                             note.active = false;
                         }

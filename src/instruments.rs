@@ -3,134 +3,225 @@ use enum_dispatch::enum_dispatch;
 
 #[enum_dispatch]
 pub trait Instrument {
-    fn sound(&self, dt: FreqType, note: &Note) -> (FreqType, bool);
-    fn name(&self) -> String {
-        String::from("Unknwon")
+    fn play_note(&self, dt: FreqType, note: &Note) -> (FreqType, bool) {
+        let amplitude = self.envelope().amplitude(dt, note.on, note.off);
+        let finished = amplitude <= 0.0;
+        let dt = note.on - dt;
+        let waves = self
+            .waves()
+            .iter()
+            .map(|wave| {
+                wave.weight
+                    * osc(
+                        dt,
+                        scale(note.id + wave.note_offset, 0),
+                        wave.wave_type,
+                        wave.lfo_hertz,
+                        wave.lfo_amplitude,
+                    )
+            })
+            .sum::<FreqType>();
+        let sound = amplitude * waves * self.volume();
+        (sound, finished)
+    }
+
+    fn waves(&self) -> Vec<WaveData> {
+        vec![WaveData::default()]
+    }
+
+    fn envelope(&self) -> EnvelopeADSR {
+        EnvelopeADSR::default()
+    }
+
+    fn volume(&self) -> FreqType {
+        1.0
     }
 }
 
 #[enum_dispatch(Instrument)]
 pub enum InstrumentType {
-    Test,
+    Default,
     Bell,
     Bell8,
     Harmonica,
 }
 
-pub struct Test {
-    env: EnvelopeADSR,
+#[derive(Clone, Copy)]
+pub struct WaveData {
+    weight: FreqType,
+    note_offset: i32,
+    wave_type: WaveType,
+    lfo_hertz: FreqType,
+    lfo_amplitude: FreqType,
 }
 
-impl Test {
-    pub fn new() -> Self {
+impl std::default::Default for WaveData {
+    fn default() -> Self {
         Self {
-            env: EnvelopeADSR::new(),
+            weight: 1.0,
+            note_offset: 0,
+            wave_type: WaveType::Sine,
+            lfo_hertz: 0.0,
+            lfo_amplitude: 0.0,
         }
     }
 }
 
-impl Instrument for Test {
-    fn sound(&self, dt: FreqType, note: &Note) -> (FreqType, bool) {
-        let amplitude = self.env.amplitude(dt, note.on, note.off);
-        let finished = amplitude <= 0.0;
-        let dt = note.on - dt;
-        let sound = amplitude * osc(dt, scale(note.id, 0), WaveType::SawFast, 0.0, 0.0);
-        (sound, finished)
+pub struct Default {}
+
+impl Default {
+    pub fn new() -> Self {
+        Self {}
     }
 }
 
+impl Instrument for Default {}
+
 pub struct Bell {
-    volume: FreqType,
+    waves: Vec<WaveData>,
     env: EnvelopeADSR,
 }
 
 impl Bell {
     #[allow(dead_code)]
     pub fn new() -> Self {
-        let mut env = EnvelopeADSR::new();
-        env.attack_time = 0.01;
-        env.decay_time = 1.0;
-        env.sustain_amplitude = 0.0;
-        env.release_time = 1.0;
-        Self { volume: 1.0, env }
+        Self {
+            env: EnvelopeADSR {
+                attack_time: 0.01,
+                decay_time: 1.0,
+                sustain_amplitude: 0.0,
+                release_time: 1.0,
+                ..EnvelopeADSR::default()
+            },
+            waves: vec![
+                WaveData {
+                    weight: 1.0,
+                    note_offset: 12,
+                    wave_type: WaveType::Sine,
+                    lfo_amplitude: 5.0,
+                    lfo_hertz: 0.001,
+                },
+                WaveData {
+                    weight: 0.5,
+                    note_offset: 24,
+                    ..WaveData::default()
+                },
+                WaveData {
+                    weight: 0.25,
+                    note_offset: 36,
+                    ..WaveData::default()
+                },
+            ],
+        }
     }
 }
 
 impl Instrument for Bell {
-    fn sound(&self, dt: FreqType, note: &Note) -> (FreqType, bool) {
-        let amplitude = self.env.amplitude(dt, note.on, note.off);
-        let finished = amplitude <= 0.0;
-        let dt = note.on - dt;
-        let waves = vec![
-            osc(dt, scale(note.id + 12, 0), WaveType::Sine, 5.0, 0.001),
-            0.5 * osc(dt, scale(note.id + 24, 0), WaveType::Sine, 0.0, 0.0),
-            0.25 * osc(dt, scale(note.id + 36, 0), WaveType::Sine, 0.0, 0.0),
-        ];
-        let sound = amplitude * waves.iter().sum::<FreqType>() * self.volume;
-        (sound, finished)
+    fn waves(&self) -> Vec<WaveData> {
+        self.waves.clone()
+    }
+
+    fn envelope(&self) -> EnvelopeADSR {
+        self.env
     }
 }
 
 pub struct Bell8 {
-    volume: FreqType,
+    waves: Vec<WaveData>,
     env: EnvelopeADSR,
 }
 
 impl Bell8 {
     #[allow(dead_code)]
     pub fn new() -> Self {
-        let mut env = EnvelopeADSR::new();
-        env.attack_time = 0.01;
-        env.decay_time = 0.5;
-        env.sustain_amplitude = 0.8;
-        env.release_time = 1.0;
-        Self { volume: 1.0, env }
+        Self {
+            env: EnvelopeADSR {
+                attack_time: 0.01,
+                decay_time: 1.0,
+                sustain_amplitude: 0.8,
+                release_time: 1.0,
+                ..EnvelopeADSR::default()
+            },
+            waves: vec![
+                WaveData {
+                    weight: 1.0,
+                    note_offset: 12,
+                    wave_type: WaveType::Sine,
+                    lfo_amplitude: 5.0,
+                    lfo_hertz: 0.001,
+                },
+                WaveData {
+                    weight: 0.5,
+                    note_offset: 24,
+                    ..WaveData::default()
+                },
+                WaveData {
+                    weight: 0.25,
+                    note_offset: 36,
+                    ..WaveData::default()
+                },
+            ],
+        }
     }
 }
 
 impl Instrument for Bell8 {
-    fn sound(&self, dt: FreqType, note: &Note) -> (FreqType, bool) {
-        let amplitude = self.env.amplitude(dt, note.on, note.off);
-        let finished = amplitude <= 0.0;
-        let dt = note.on - dt;
-        let waves = vec![
-            osc(dt, scale(note.id + 12, 0), WaveType::Sine, 5.0, 0.001),
-            0.5 * osc(dt, scale(note.id + 24, 0), WaveType::Sine, 0.0, 0.0),
-            0.25 * osc(dt, scale(note.id + 36, 0), WaveType::Sine, 0.0, 0.0),
-        ];
-        let sound = amplitude * waves.iter().sum::<FreqType>() * self.volume;
-        (sound, finished)
+    fn waves(&self) -> Vec<WaveData> {
+        self.waves.clone()
+    }
+
+    fn envelope(&self) -> EnvelopeADSR {
+        self.env
     }
 }
 
 pub struct Harmonica {
-    volume: FreqType,
+    waves: Vec<WaveData>,
     env: EnvelopeADSR,
 }
 
 impl Harmonica {
     #[allow(dead_code)]
     pub fn new() -> Self {
-        let mut env = EnvelopeADSR::new();
-        env.attack_time = 0.05;
-        env.decay_time = 1.0;
-        env.sustain_amplitude = 0.95;
-        env.release_time = 0.1;
-        Self { volume: 1.0, env }
+        Self {
+            env: EnvelopeADSR {
+                attack_time: 0.05,
+                decay_time: 1.0,
+                sustain_amplitude: 0.95,
+                release_time: 0.1,
+                ..EnvelopeADSR::default()
+            },
+            waves: vec![
+                WaveData {
+                    weight: 1.0,
+                    note_offset: 0,
+                    wave_type: WaveType::Square,
+                    lfo_amplitude: 5.0,
+                    lfo_hertz: 0.001,
+                },
+                WaveData {
+                    weight: 0.5,
+                    note_offset: 12,
+                    wave_type: WaveType::Square,
+                    ..WaveData::default()
+                },
+                WaveData {
+                    weight: 0.25,
+                    note_offset: 24,
+                    wave_type: WaveType::Noise,
+                    ..WaveData::default()
+                },
+            ],
+        }
     }
 }
 
 impl Instrument for Harmonica {
-    fn sound(&self, dt: FreqType, note: &Note) -> (FreqType, bool) {
-        let amplitude = self.env.amplitude(dt, note.on, note.off);
-        let finished = amplitude <= 0.0;
-        let dt = note.on - dt;
-        let waves = vec![
-            osc(dt, scale(note.id, 0), WaveType::Square, 5.0, 0.001),
-            0.5 * osc(dt, scale(note.id + 12, 0), WaveType::Square, 0.0, 0.0),
-            0.05 * osc(dt, scale(note.id + 24, 0), WaveType::Noise, 0.0, 0.0),
-        ];
-        let sound = amplitude * waves.iter().sum::<FreqType>() * self.volume;
-        (sound, finished)
+    fn waves(&self) -> Vec<WaveData> {
+        self.waves.clone()
+    }
+
+    fn envelope(&self) -> EnvelopeADSR {
+        self.env
     }
 }

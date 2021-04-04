@@ -1,5 +1,5 @@
 use device_query::{DeviceQuery, DeviceState, Keycode};
-use instruments::{InstrumentType, Test};
+use instruments::{Default, InstrumentType};
 use noise_maker::{NoiseMaker, NoiseMakerData, Note};
 use rodio::{source::Source, OutputStream, Sink};
 use std::io::Write;
@@ -17,7 +17,7 @@ fn main() {
     {
         let data = data.clone();
         thread::spawn(move || {
-            let instruments = vec![InstrumentType::from(Test::new())];
+            let instruments = vec![InstrumentType::from(Default::new())];
             let (_stream, stream_handle) = OutputStream::try_default().unwrap();
             let sink = Sink::try_new(&stream_handle).unwrap();
             let source = NoiseMaker::new(data, instruments).amplify(0.20);
