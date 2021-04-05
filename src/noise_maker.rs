@@ -156,16 +156,14 @@ pub struct NoiseMaker {
 pub struct NoiseMakerData {
     num_sample: usize,
     pub dt: FreqType,
-    pub envelope: EnvelopeADSR,
     pub notes: Vec<Note>,
 }
 
 impl Default for NoiseMakerData {
     fn default() -> Self {
         Self {
-            envelope: EnvelopeADSR::default(),
-            dt: 0.0,
             num_sample: 0,
+            dt: 0.0,
             notes: Vec::new(),
         }
     }
@@ -174,32 +172,6 @@ impl Default for NoiseMakerData {
 impl NoiseMaker {
     pub fn new(data: Arc<Mutex<NoiseMakerData>>, instruments: Vec<InstrumentType>) -> Self {
         Self { data, instruments }
-    }
-
-    fn make_noise(&self) -> FreqType {
-        match self.data.lock() {
-            Ok(mut data) => {
-                let dt = data.dt;
-                let mixed_output: FreqType = data
-                    .notes
-                    .iter_mut()
-                    .map(|note| {
-                        let (sound, finished) = self.instruments[note.channel].play_note(dt, note);
-                        if finished && note.off > note.on {
-                            note.active = false;
-                        }
-                        sound
-                    })
-                    .sum();
-
-                while let Some(index) = data.notes.iter().position(|x| !x.active) {
-                    data.notes.remove(index);
-                }
-
-                mixed_output * 0.2
-            }
-            Err(_) => 0.0,
-        }
     }
 }
 
@@ -214,7 +186,6 @@ impl Source for NoiseMaker {
 
     fn sample_rate(&self) -> u32 {
         48000
-        // 20
     }
 
     fn total_duration(&self) -> Option<Duration> {
@@ -227,12 +198,33 @@ impl Iterator for NoiseMaker {
 
     #[inline]
     fn next(&mut self) -> Option<f32> {
-        if let Ok(mut data) = self.data.lock() {
+        let noise = if let Ok(mut data) = self.data.lock() {
             data.num_sample = data.num_sample.wrapping_add(1);
             data.dt = data.num_sample as FreqType / self.sample_rate() as FreqType;
-        }
-        let noise = self.make_noise();
+            make_noise(data.dt, &mut data.notes, &self.instruments)
+        } else {
+            0.0
+        };
         // dbg!(noise);
         Some(noise as f32)
     }
+}
+
+fn make_noise(dt: FreqType, notes: &mut Vec<Note>, instruments: &[InstrumentType]) -> FreqType {
+    let mixed_output: FreqType = notes
+        .iter_mut()
+        .map(|note| {
+            let (sound, finished) = instruments[note.channel].play_note(dt, note);
+            if finished && note.off > note.on {
+                note.active = false;
+            }
+            sound
+        })
+        .sum();
+
+    while let Some(index) = notes.iter().position(|x| !x.active) {
+        notes.remove(index);
+    }
+
+    mixed_output * 0.2
 }
