@@ -28,9 +28,9 @@ fn main() {
 
     println!(
         r#"
-        |   |   |   |   |   | |   |   |   |   | |   | |   |   |   |
-        |   | S |   |   | F | | G |   |   | J | | K | | L |   |   |
-        |   |___|   |   |___| |___|   |   |___| |___| |___|   |   |__
+        |   |   | |   |   |   |   | |   | |   |   |   |   | |   |   |
+        |   | S | | D |   |   | G | | H | | J |   |   | L | | ; |   |
+        |   |___| |___|   |   |___| |___| |___|   |   |___| |___|   |
         |     |     |     |     |     |     |     |     |     |     |
         |  Z  |  X  |  C  |  V  |  B  |  N  |  M  |  ,  |  .  |  /  |
         |_____|_____|_____|_____|_____|_____|_____|_____|_____|_____|
@@ -41,24 +41,25 @@ fn main() {
         let device_state = DeviceState::new();
         let keys = device_state.get_keys();
 
-        for k in 0..16 {
+        for k in 0..=16 {
             let is_pressed = match k {
                 0 if keys.contains(&Keycode::Z) => true,
                 1 if keys.contains(&Keycode::S) => true,
                 2 if keys.contains(&Keycode::X) => true,
-                3 if keys.contains(&Keycode::C) => true,
-                4 if keys.contains(&Keycode::F) => true,
+                3 if keys.contains(&Keycode::D) => true,
+                4 if keys.contains(&Keycode::C) => true,
                 5 if keys.contains(&Keycode::V) => true,
                 6 if keys.contains(&Keycode::G) => true,
                 7 if keys.contains(&Keycode::B) => true,
-                8 if keys.contains(&Keycode::N) => true,
-                9 if keys.contains(&Keycode::J) => true,
-                10 if keys.contains(&Keycode::M) => true,
-                11 if keys.contains(&Keycode::K) => true,
+                8 if keys.contains(&Keycode::H) => true,
+                9 if keys.contains(&Keycode::N) => true,
+                10 if keys.contains(&Keycode::J) => true,
+                11 if keys.contains(&Keycode::M) => true,
                 12 if keys.contains(&Keycode::Comma) => true,
                 13 if keys.contains(&Keycode::L) => true,
                 14 if keys.contains(&Keycode::Dot) => true,
-                15 if keys.contains(&Keycode::Slash) => true,
+                15 if keys.contains(&Keycode::Semicolon) => true,
+                16 if keys.contains(&Keycode::Slash) => true,
                 _ => false,
             };
 
