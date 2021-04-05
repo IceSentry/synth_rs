@@ -5,7 +5,7 @@ use enum_dispatch::enum_dispatch;
 pub trait Instrument {
     fn play_note(&self, dt: FreqType, note: &Note) -> (FreqType, bool) {
         let amplitude = self.envelope().amplitude(dt, note.on, note.off);
-        let finished = amplitude <= 0.0;
+        let finished = self.max_lifetime() > 0.0 && dt - note.on >= self.max_lifetime();
         let dt = note.on - dt;
         let waves = self
             .waves()
@@ -34,6 +34,10 @@ pub trait Instrument {
     }
 
     fn volume(&self) -> FreqType {
+        1.0
+    }
+
+    fn max_lifetime(&self) -> FreqType {
         1.0
     }
 }
@@ -70,6 +74,7 @@ impl std::default::Default for WaveData {
 pub struct Default {}
 
 impl Default {
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self {}
     }
