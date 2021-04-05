@@ -24,7 +24,7 @@ pub struct Note {
     pub on: FreqType,
     pub off: FreqType,
     pub active: bool,
-    pub channel: usize,
+    pub instrument_id: usize,
 }
 
 impl Note {
@@ -34,7 +34,7 @@ impl Note {
             on: 0.0,
             off: 0.0,
             active: false,
-            channel: 0,
+            instrument_id: 0,
         }
     }
 }
@@ -149,12 +149,12 @@ impl EnvelopeADSR {
 }
 
 pub struct NoiseMaker {
-    data: Arc<Mutex<NoiseMakerData>>,
+    pub data: Arc<Mutex<NoiseMakerData>>,
+    num_sample: usize,
     instruments: Vec<InstrumentType>,
 }
 
 pub struct NoiseMakerData {
-    num_sample: usize,
     pub dt: FreqType,
     pub notes: Vec<Note>,
 }
@@ -162,7 +162,6 @@ pub struct NoiseMakerData {
 impl Default for NoiseMakerData {
     fn default() -> Self {
         Self {
-            num_sample: 0,
             dt: 0.0,
             notes: Vec::new(),
         }
@@ -171,7 +170,11 @@ impl Default for NoiseMakerData {
 
 impl NoiseMaker {
     pub fn new(data: Arc<Mutex<NoiseMakerData>>, instruments: Vec<InstrumentType>) -> Self {
-        Self { data, instruments }
+        Self {
+            data,
+            num_sample: 0,
+            instruments,
+        }
     }
 }
 
@@ -199,8 +202,8 @@ impl Iterator for NoiseMaker {
     #[inline]
     fn next(&mut self) -> Option<f32> {
         let noise = if let Ok(mut data) = self.data.lock() {
-            data.num_sample = data.num_sample.wrapping_add(1);
-            data.dt = data.num_sample as FreqType / self.sample_rate() as FreqType;
+            self.num_sample = self.num_sample.wrapping_add(1);
+            data.dt = self.num_sample as FreqType / self.sample_rate() as FreqType;
             make_noise(data.dt, &mut data.notes, &self.instruments)
         } else {
             0.0
@@ -214,7 +217,7 @@ fn make_noise(dt: FreqType, notes: &mut Vec<Note>, instruments: &[InstrumentType
     let mixed_output: FreqType = notes
         .iter_mut()
         .map(|note| {
-            let (sound, finished) = instruments[note.channel].play_note(dt, note);
+            let (sound, finished) = instruments[note.instrument_id].play_note(dt, note);
             if finished && note.off > note.on {
                 note.active = false;
             }
