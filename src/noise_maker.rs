@@ -1,15 +1,11 @@
+use crate::instruments::{Instrument, InstrumentType};
 use core::f32;
 use rodio::source::Source;
 use std::{
-    f64::consts::TAU,
+    f64::consts::{FRAC_2_PI, PI, TAU},
     sync::{Arc, Mutex},
-};
-use std::{
-    f64::consts::{FRAC_2_PI, PI},
     time::Duration,
 };
-
-use crate::instruments::{Instrument, InstrumentType};
 
 pub type FreqType = f64;
 
@@ -20,15 +16,15 @@ fn w(hertz: FreqType) -> FreqType {
 
 #[derive(Debug)]
 pub struct Note {
-    pub id: i32,
+    pub id: u8,
     pub on: FreqType,
     pub off: FreqType,
     pub active: bool,
     pub instrument_id: usize,
 }
 
-impl Note {
-    pub fn new() -> Self {
+impl Default for Note {
+    fn default() -> Self {
         Self {
             id: 0,
             on: 0.0,
@@ -36,12 +32,6 @@ impl Note {
             active: false,
             instrument_id: 0,
         }
-    }
-}
-
-impl Default for Note {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -63,32 +53,22 @@ pub fn osc(
     lfo_hertz: FreqType,
     lfo_amplitude: FreqType,
 ) -> FreqType {
-    let phase = w(freq) * dt;
+    let mut phase = w(freq) * dt;
     let lfo_phase = w(lfo_hertz) * dt;
-    let base_freq = phase + lfo_amplitude * freq * lfo_phase.sin();
+    phase += lfo_amplitude * lfo_phase * lfo_phase.sin();
     match wave {
-        WaveType::Sine => base_freq.sin(),
-        WaveType::Square => {
-            if base_freq.sin() > 0.0 {
-                1.0
-            } else {
-                -1.0
-            }
-        }
-        WaveType::Triangle => base_freq.sin().asin() * FRAC_2_PI,
+        WaveType::Sine => phase.sin(),
+        WaveType::Square => phase.sin().signum(),
+        WaveType::Triangle => phase.sin().asin() * FRAC_2_PI,
         WaveType::SawSlow => {
             let out = (1..50)
                 .map(|x| x as FreqType)
-                .fold(0.0, |acc, curr| acc + ((curr * base_freq).sin() / curr));
+                .fold(0.0, |acc, curr| acc + ((curr * phase).sin() / curr));
             out * FRAC_2_PI
         }
         WaveType::SawFast => (phase % TAU) / PI - 1.0,
         WaveType::Noise => fastrand::i32(-1..1) as FreqType,
     }
-}
-
-pub fn scale(note_id: i32, _scale_id: i32) -> FreqType {
-    256.0 * 1.059_463_094_359_295_3_f64.powi(note_id)
 }
 
 #[derive(Clone, Copy)]
@@ -114,31 +94,33 @@ impl Default for EnvelopeADSR {
 
 impl EnvelopeADSR {
     pub fn amplitude(&self, dt: FreqType, dt_on: FreqType, dt_off: FreqType) -> FreqType {
-        let mut amplitude = if dt_on > dt_off {
-            let lifetime = dt - dt_on;
-            if lifetime <= self.attack_time {
-                (lifetime / self.attack_time) * self.start_amplitude
-            } else if lifetime <= (self.attack_time + self.decay_time) {
-                ((lifetime - self.attack_time) / self.decay_time)
-                    * (self.sustain_amplitude - self.start_amplitude)
-                    + self.start_amplitude
-            } else {
-                self.sustain_amplitude
-            }
-        } else {
-            let lifetime = dt_off - dt_on;
-            let release_amplitude = if lifetime <= self.attack_time {
-                (lifetime / self.attack_time) * self.start_amplitude
-            } else if lifetime <= (self.attack_time + self.decay_time) {
-                ((lifetime - self.attack_time) / self.decay_time)
-                    * (self.sustain_amplitude - self.start_amplitude)
-                    + self.start_amplitude
-            } else {
-                self.sustain_amplitude
-            };
+        if dt_on <= 0.0 {
+            return 0.0;
+        }
 
-            ((dt - dt_off) / self.release_time) * -release_amplitude + release_amplitude
+        let lifetime = if dt_on > dt_off {
+            dt - dt_on
+        } else {
+            dt_off - dt_on
         };
+
+        let mut amplitude = if lifetime <= self.attack_time {
+            // Attack
+            (lifetime / self.attack_time) * self.start_amplitude
+        } else if lifetime <= (self.attack_time + self.decay_time) {
+            // Decay
+            ((lifetime - self.attack_time) / self.decay_time)
+                * (self.sustain_amplitude - self.start_amplitude)
+                + self.start_amplitude
+        } else {
+            // Sustain
+            self.sustain_amplitude
+        };
+
+        if dt_on <= dt_off {
+            // Release
+            amplitude = ((dt - dt_off) / self.release_time) * -amplitude + amplitude;
+        }
 
         if amplitude <= 0.0001 {
             amplitude = 0.0;

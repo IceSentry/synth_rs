@@ -1,15 +1,16 @@
 use anyhow::Result;
 use device_query::{DeviceQuery, DeviceState, Keycode};
 use instruments::{Default, InstrumentType};
-use noise_maker::{NoiseMaker, NoiseMakerData, Note};
+use noise_maker::{NoiseMaker, NoiseMakerData, Note as NoiseMakerNote};
+use note::Note;
 use rodio::{OutputStream, Sink};
-use std::{
-    io::Write,
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
 mod instruments;
 mod noise_maker;
+mod note;
+
+pub const KEYBOARD_OFFSET: i32 = 9; // Note is computed from A, but keyboard starts at C
 
 fn main() -> Result<()> {
     let instruments = vec![InstrumentType::from(Default::new())];
@@ -25,47 +26,55 @@ fn main() -> Result<()> {
         |   |   | |   |   |   |   | |   | |   |   |   |   | |   |   |
         |   | S | | D |   |   | G | | H | | J |   |   | L | | ; |   |
         |   |___| |___|   |   |___| |___| |___|   |   |___| |___|   |
-        |     |     |     |     |     |     |     |     |     |     |
-        |  Z  |  X  |  C  |  V  |  B  |  N  |  M  |  ,  |  .  |  /  |
+Note    |  C  |  D  |  E  |  F  |  G  |  A  |  B  |     |     |     |
+Key     |  Z  |  X  |  C  |  V  |  B  |  N  |  M  |  ,  |  .  |  /  |
         |_____|_____|_____|_____|_____|_____|_____|_____|_____|_____|
         "#
     );
+
+    let octave = 4;
+    let octave_offset = 12 * (octave + 1); // octave is -1 based
 
     loop {
         let device_state = DeviceState::new();
         let keys = device_state.get_keys();
 
-        for k in 0..=16 {
-            let is_pressed = is_key_pressed(k, &keys);
+        for key in 0u8..=16u8 {
+            let is_pressed = is_key_pressed(key, &keys);
+
+            let note_id = key + octave_offset;
 
             if let Ok(mut data) = data.lock() {
                 let dt = data.dt;
-                match data.notes.iter_mut().find(|n| n.id == k) {
-                    Some(note) => {
-                        if is_pressed {
-                            if note.off > note.on {
-                                note.on = dt;
-                                note.active = true;
-                            }
-                        } else if note.off < note.on {
-                            note.off = dt;
+                if let Some(note) = data.notes.iter_mut().find(|note| note.id == note_id) {
+                    if is_pressed {
+                        if note.off > note.on {
+                            note.on = dt;
+                            note.active = true;
                         }
+                    } else if note.off < note.on {
+                        note.off = dt;
                     }
-                    None => {
-                        if is_pressed {
-                            let note = Note {
-                                id: k,
-                                on: dt,
-                                off: 0.0,
-                                instrument_id: 0,
-                                active: true,
-                            };
-                            data.notes.push(note);
-                        }
-                    }
+                } else if is_pressed {
+                    data.notes.push(NoiseMakerNote {
+                        id: note_id,
+                        on: dt,
+                        off: 0.0,
+                        instrument_id: 0,
+                        active: true,
+                    });
                 }
-                print!("\rNotes: {}  ", data.notes.len());
-                std::io::stdout().flush()?;
+
+                print!(
+                    "\rNotes: {:?}                                          ",
+                    data.notes
+                        .iter()
+                        .map(|n| {
+                            let note = Note::from(n.id);
+                            format!("{} {:.2}", note, note.freq())
+                        })
+                        .collect::<Vec<_>>()
+                );
             }
         }
 
@@ -78,7 +87,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn is_key_pressed(key_id: i32, keys: &[Keycode]) -> bool {
+fn is_key_pressed(key_id: u8, keys: &[Keycode]) -> bool {
     match key_id {
         0 if keys.contains(&Keycode::Z) => true,
         1 if keys.contains(&Keycode::S) => true,
